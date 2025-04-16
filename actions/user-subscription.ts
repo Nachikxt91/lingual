@@ -1,57 +1,61 @@
 "use server";
 
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { stripe } from "@/lib/stripe";
-import { absoluteUrl } from "@/lib/utils";
-import { getUserSubscription } from "@/db/queries";
+import { userSubscription } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import db from "@/db/drizzle";
 
-const returnUrl=absoluteUrl("/shop");
+export const createStripeUrl = async () => {
+  try {
+    const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized");
 
-export const createStripeUrl = async () =>{
-    const {userId}=await auth();
-    const user=await currentUser();
+    // Check if user has a subscription
+    const userSub = await db.query.userSubscription.findFirst({
+      where: eq(userSubscription.userId, userId),
+    });
 
-    if (!userId || !user){
-        throw new Error("Unauthorized");
+    // Create portal session for existing customers
+    if (userSub?.stripeCustomerId) {
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: userSub.stripeCustomerId,
+        return_url: `${process.env.NEXT_PUBLIC_APP_URL}/shop`,
+      });
+      return { data: portalSession.url };
     }
 
-    const userSubscription = await getUserSubscription();
-
-    if (userSubscription && userSubscription.stripeCustomerId) {
-        const stripeSession = await stripe.billingPortal.sessions.create({
-            customer:userSubscription.stripeCustomerId,
-            return_url:returnUrl,
-        })
-
-        return {data:stripeSession.url};
-    }
-
-    const stripeSession = await stripe.checkout.sessions.create({
-        mode:"subscription",
-        payment_method_types:["card"],
-        customer_email: user.emailAddresses[0].emailAddress,
+    // Create checkout session for new customers
+    const checkoutSession = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        payment_method_types: ["card"],
         line_items: [
-            {
-                quantity:1,
-                price_data:{
-                    currency:"USD",
-                    product_data:{
-                        name:"Lingual Pro",
-                        description:"Unlimited Hearts",
-                    },
-                    unit_amount:2000,
-                    recurring:{
-                        interval:"month",
-                    },
-                },
+          {
+            price_data: {
+              currency: "inr", // ✅ INR here
+              unit_amount: 49900, // ₹499.00 → Stripe requires amount in paise
+              product_data: {
+                name: "Pro Plan",
+              },
+              recurring: {
+                interval: "month",
+              },
             },
+            quantity: 1,
+          },
         ],
-        metadata:{
-            userId,
+        metadata: {
+          userId,
         },
-        success_url:returnUrl,
-        cancel_url:returnUrl,
-    })
+        success_url: `${process.env.NEXT_PUBLIC_APP_URL}/shop?success=true`,
+        cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/shop?canceled=true`,
+      });
+      
 
-    return {data: stripeSession.url};
-}
+    return { data: checkoutSession.url };
+  } catch (error) {
+    console.error("Stripe error:", error);
+    return { error: "Failed to create Stripe session" };
+  }
+};
