@@ -6,6 +6,6 @@ export default{
     dialect: "postgresql",
     out:"./drizzle",
     dbCredentials:{
-        url: "postgresql://neondb_owner:npg_rymCafI5X7Qd@ep-shrill-dream-a84lpy17-pooler.eastus2.azure.neon.tech/neondb?sslmode=require",
+        url: "postgresql://neondb_owner:npg_o9ecnzkRgQ1J@ep-raspy-night-a4url1bw-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require",
     },
 } satisfies Config;

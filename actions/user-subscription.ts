@@ -33,7 +33,7 @@ export const createStripeUrl = async () => {
         line_items: [
           {
             price_data: {
-              currency: "inr", // ✅ INR here
+              currency: "inr", 
               unit_amount: 49900, // ₹499.00 → Stripe requires amount in paise
               product_data: {
                 name: "Pro Plan",
