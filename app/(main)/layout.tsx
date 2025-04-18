@@ -1,7 +1,6 @@
 import { MobileHeader } from "@/components/mobile-header";
 import { Sidebar } from "@/components/sidebar";
-import { ScanFace } from "lucide-react";
-import { Children } from "react";
+
 
 type Props={
     children: React.ReactNode;

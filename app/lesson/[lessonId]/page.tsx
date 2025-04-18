@@ -1,5 +1,4 @@
 import { getLesson, getUserProgress, getUserSubscription } from "@/db/queries";
-import { userProgress } from "@/db/schema";
 import { redirect } from "next/navigation";
 import { Quiz } from "../quiz";
 

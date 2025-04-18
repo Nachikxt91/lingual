@@ -1,5 +1,6 @@
 import db from "@/db/drizzle";
 import { userSubscription } from "@/db/schema";
+import { sendSubscriptionConfirmation } from "@/lib/email";
 import { stripe } from "@/lib/stripe";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -18,66 +19,73 @@ export async function POST(req: Request) {
       signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
-  } catch (error: any) {
-    console.error(`Webhook Error: ${error.message}`);
-    return new NextResponse(`Webhook Error: ${error.message}`, { status: 400 });
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error("Stripe Webhook Error:", error.message);
+      return new NextResponse(`Webhook Error: ${error.message}`, { status: 400 });
+    }
+
+    console.error("Unknown Stripe Webhook Error:", error);
+    return new NextResponse("Webhook Error", { status: 400 });
   }
 
-  try {
-    // Handle checkout.session.completed (new subscription)
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object as Stripe.Checkout.Session;
-      
-      if (!session.subscription) {
-        console.error("No subscription ID in session");
-        return new NextResponse("Subscription ID is required", { status: 400 });
+  // Handle subscription creation
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+
+    const subscription = await stripe.subscriptions.retrieve(
+      session.subscription as string
+    );
+
+    if (!session?.metadata?.userId) {
+      return new NextResponse("User ID is required", { status: 400 });
+    }
+
+    const customer = await stripe.customers.retrieve(session.customer as string);
+
+    if (customer.deleted) {
+      return new NextResponse("Customer has been deleted", { status: 400 });
+    }
+
+    const email = customer.email;
+    const name = customer.name || "Lingual Learner";
+
+    await db.insert(userSubscription).values({
+      userId: session.metadata.userId,
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId: subscription.customer as string,
+      stripePriceId: subscription.items.data[0].price.id,
+      stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+    });
+
+    if (email) {
+      try {
+        await sendSubscriptionConfirmation(email, name);
+        console.log(`Confirmation email sent to ${email}`);
+      } catch (error) {
+        console.error(`Failed to send email to ${email}:`, error);
       }
+    }
+  }
 
-      const subscription = await stripe.subscriptions.retrieve(
-        session.subscription as string
-      );
+  // Handle subscription renewals
+  if (event.type === "invoice.payment_succeeded") {
+    const invoice = event.data.object as Stripe.Invoice;
 
-      if (!session?.metadata?.userId) {
-        console.error("No user ID in metadata");
-        return new NextResponse("User ID is required", { status: 400 });
-      }
+    const subscriptionId = invoice.subscription;
+    if (typeof subscriptionId !== "string") {
+      return new NextResponse("Missing subscription ID in invoice", { status: 400 });
+    }
 
-      await db.insert(userSubscription).values({
-        userId: session.metadata.userId,
-        stripeSubscriptionId: subscription.id,
-        stripeCustomerId: subscription.customer as string,
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    await db.update(userSubscription)
+      .set({
         stripePriceId: subscription.items.data[0].price.id,
-        stripeCurrentPeriodEnd: new Date(
-          subscription.current_period_end * 1000
-        ),
-      });
-    }
-    // Handle invoice.payment_succeeded (renewal)
-    else if (event.type === "invoice.payment_succeeded") {
-      const invoice = event.data.object as Stripe.Invoice;
-      
-      if (!invoice.subscription) {
-        console.error("No subscription ID in invoice");
-        return new NextResponse("Subscription ID is required", { status: 400 });
-      }
-
-      const subscription = await stripe.subscriptions.retrieve(
-        invoice.subscription as string
-      );
-
-      await db.update(userSubscription)
-        .set({
-          stripePriceId: subscription.items.data[0].price.id,
-          stripeCurrentPeriodEnd: new Date(
-            subscription.current_period_end * 1000
-          ),
-        })
-        .where(eq(userSubscription.stripeSubscriptionId, subscription.id));
-    }
-
-    return new NextResponse(null, { status: 200 });
-  } catch (error: any) {
-    console.error("Webhook processing error:", error);
-    return new NextResponse(`Internal Error: ${error.message}`, { status: 500 });
+        stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+      })
+      .where(eq(userSubscription.stripeSubscriptionId, subscription.id));
   }
+
+  return new NextResponse(null, { status: 200 });
 }

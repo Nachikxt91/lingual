@@ -38,10 +38,10 @@ export const ExitModal=()=>{
                         />
                     </div>
                     <DialogTitle className="text-center font-bold text-2xl">
-                        Wait, don't go!
+                        Wait, don&#39;t go!
                     </DialogTitle>
                     <DialogDescription className="text-center text-base">
-                        You're about to leave the lesson. Are you sure?
+                        You&#39;re about to leave the lesson. Are you sure?
                     </DialogDescription>
                 </DialogHeader>
                 <DialogFooter className="mb-4">
