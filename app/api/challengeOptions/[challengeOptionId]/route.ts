@@ -1,18 +1,22 @@
-import db from "@/db/drizzle";
-import { challengeOptions } from "@/db/schema";
-import { isAdmin } from "@/lib/admin";
-import { eq } from "drizzle-orm";
+// app/api/challenges/[challengeId]/route.ts
+
 import { NextResponse } from "next/server";
+import db from "@/db/drizzle";
+import { challenges } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { isAdmin } from "@/lib/admin";
 
-export const GET = async (
-  req: Request,
-  context: { params: { challengeOptionId: string } }
-) => {
-  const params = await context.params; // Explicitly await params
+// Use inferred Next.js context without forcing ParamCheck conflict
+type Context = {
+  params: {
+    challengeId: string;
+  };
+};
 
-  const challengeOptionId = parseInt(params.challengeOptionId, 10);
+export async function GET(_req: Request, { params }: Context) {
+  const id = parseInt(params.challengeId, 10);
 
-  if (isNaN(challengeOptionId)) {
+  if (isNaN(id)) {
     return new NextResponse("Invalid ID", { status: 400 });
   }
 
@@ -20,65 +24,9 @@ export const GET = async (
     return new NextResponse("Unauthorized", { status: 403 });
   }
 
-  const data = await db.query.challengeOptions.findFirst({
-    where: eq(challengeOptions.id, challengeOptionId),
+  const data = await db.query.challenges.findFirst({
+    where: eq(challenges.id, id),
   });
 
   return NextResponse.json(data);
-};
-
-
-export const PUT = async (
-  req: Request,
-  context: { params: { challengeOptionId: string } }
-) => {
-  const params = await context.params;
-
-  const challengeOptionId = parseInt(params.challengeOptionId, 10);
-
-  if (isNaN(challengeOptionId)) {
-    return new NextResponse("Invalid ID", { status: 400 });
-  }
-
-  if (!isAdmin()) {
-    return new NextResponse("Unauthorized", { status: 403 });
-  }
-
-  const body = await req.json();
-  const data = await db.update(challengeOptions)
-    .set({ ...body })
-    .where(eq(challengeOptions.id, challengeOptionId))
-    .returning();
-
-  return NextResponse.json(data[0]);
-};
-
-
-export const DELETE = async (
-  req: Request,
-  context: { params: { challengeOptionId: string } }
-) => {
-  const params = await context.params;
-
-  const challengeOptionId = parseInt(params.challengeOptionId, 10);
-
-  if (isNaN(challengeOptionId)) {
-    return new NextResponse("Invalid ID", { status: 400 });
-  }
-
-  if (!isAdmin()) {
-    return new NextResponse("Unauthorized", { status: 403 });
-  }
-
-  const data = await db.delete(challengeOptions)
-    .where(eq(challengeOptions.id, challengeOptionId))
-    .returning();
-
-  return NextResponse.json(data[0]);
-};
-
-
-
-
-
-
+}
