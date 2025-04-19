@@ -1,6 +1,5 @@
 import db from "@/db/drizzle";
 import { userSubscription } from "@/db/schema";
-import { sendSubscriptionConfirmation } from "@/lib/email";
 import { stripe } from "@/lib/stripe";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -43,12 +42,9 @@ export async function POST(req: Request) {
 
     const customer = await stripe.customers.retrieve(session.customer as string);
 
-    if (customer.deleted) {
+    if ((customer as Stripe.Customer).deleted) {
       return new NextResponse("Customer has been deleted", { status: 400 });
     }
-
-    const email = customer.email;
-    const name = customer.name || "Lingual Learner";
 
     await db.insert(userSubscription).values({
       userId: session.metadata.userId,
@@ -57,15 +53,6 @@ export async function POST(req: Request) {
       stripePriceId: subscription.items.data[0].price.id,
       stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
     });
-
-    if (email) {
-      try {
-        await sendSubscriptionConfirmation(email, name);
-        console.log(`Confirmation email sent to ${email}`);
-      } catch (error) {
-        console.error(`Failed to send email to ${email}:`, error);
-      }
-    }
   }
 
   // Handle subscription renewals
